@@ -2,6 +2,7 @@ package com.mln.tongji_canvas
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge

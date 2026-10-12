@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import com.mln.tongji_canvas.data.Course
+import com.mln.tongji_canvas.data.CredentialVerifier
 import com.mln.tongji_canvas.data.SessionRepository
 import com.mln.tongji_canvas.data.UserSession
 import com.mln.tongji_canvas.ui.components.EmptyStatePanel
@@ -124,8 +125,8 @@ fun MainScreen(
     var editAccessToken by remember { mutableStateOf("") }
     var editUserCourseIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var addingUser by remember { mutableStateOf(false) }
-    var addDisplayName by remember { mutableStateOf("") }
     var addAccessToken by remember { mutableStateOf("") }
+    var importError by remember { mutableStateOf<String?>(null) }
     var showAddMenu by remember { mutableStateOf(false) }
 
     // 课程相关状态
@@ -193,6 +194,7 @@ fun MainScreen(
             }
             try {
                 var imported = 0
+                var failed = 0
                 var coursesImported = 0
 
                 if (raw.startsWith("{")) {
@@ -206,14 +208,19 @@ fun MainScreen(
                         val obj = usersArray.optJSONObject(i) ?: continue
                         val name = obj.optString("displayName", obj.optString("name")).trim()
                         val token = obj.optString("accessToken", obj.optString("token")).trim()
-                        if (name.isNotEmpty() && token.isNotEmpty()) {
+                        if (token.isNotEmpty()) {
+                            val verified = CredentialVerifier.verify(token)
+                            if (verified == null) {
+                                failed++
+                                continue
+                            }
                             val tokens = com.mln.tongji_canvas.data.OAuth2Tokens(
                                 accessToken = token,
                                 refreshToken = null,
                                 expiresIn = 3600L
                             )
-                            val session = repository.addOrUpdateSession(name, tokens)
-                            nameToIdMap[name] = session.id
+                            val session = repository.addOrUpdateSession(verified.displayName, tokens)
+                            if (name.isNotEmpty()) nameToIdMap[name] = session.id
                             imported++
                         }
                     }
@@ -253,13 +260,18 @@ fun MainScreen(
                         val obj = array.optJSONObject(i) ?: continue
                         val name = obj.optString("displayName", obj.optString("name")).trim()
                         val token = obj.optString("accessToken", obj.optString("token")).trim()
-                        if (name.isNotEmpty() && token.isNotEmpty()) {
+                        if (token.isNotEmpty()) {
+                            val verified = CredentialVerifier.verify(token)
+                            if (verified == null) {
+                                failed++
+                                continue
+                            }
                             val tokens = com.mln.tongji_canvas.data.OAuth2Tokens(
                                 accessToken = token,
                                 refreshToken = null,
                                 expiresIn = 3600L
                             )
-                            repository.addOrUpdateSession(name, tokens)
+                            repository.addOrUpdateSession(verified.displayName, tokens)
                             imported++
                         }
                     }
@@ -275,6 +287,7 @@ fun MainScreen(
                 } else {
                     snackbarHostState.showSnackbar("未识别到可导入的账号")
                 }
+                if (failed > 0) importError = "$failed 个账号验证失败，未保存"
             } catch (e: Exception) {
                 snackbarHostState.showSnackbar("剪贴板内容格式有误")
             }
@@ -519,32 +532,42 @@ fun MainScreen(
 
     AddUserDialog(
         visible = addingUser,
-        displayName = addDisplayName,
         accessToken = addAccessToken,
-        onDisplayNameChange = { addDisplayName = it },
         onAccessTokenChange = { addAccessToken = it },
         onDismiss = {
             addingUser = false
-            addDisplayName = ""
             addAccessToken = ""
         },
         onConfirm = {
-            if (addDisplayName.isNotBlank()) {
+            if (addAccessToken.isNotBlank()) {
                 scope.launch {
+                    val verified = CredentialVerifier.verify(addAccessToken)
+                    if (verified == null) {
+                        importError = "账号验证失败，请检查 Cookies 后重试"
+                        return@launch
+                    }
                     val tokens = com.mln.tongji_canvas.data.OAuth2Tokens(
                         accessToken = addAccessToken.ifBlank { null },
                         refreshToken = null,
                         expiresIn = 3600L
                     )
-                    repository.addOrUpdateSession(addDisplayName, tokens)
+                    repository.addOrUpdateSession(verified.displayName, tokens)
                     refreshSessions()
                     addingUser = false
-                    addDisplayName = ""
                     addAccessToken = ""
                 }
             }
         }
     )
+
+    importError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { importError = null },
+            title = { Text("导入未完成") },
+            text = { Text(error) },
+            confirmButton = { TextButton(onClick = { importError = null }) { Text("知道了") } }
+        )
+    }
 
     // 添加课程对话框
     AddCourseDialog(
@@ -1455,9 +1478,7 @@ private fun EditingDialogWithCourses(
 @Composable
 private fun AddUserDialog(
     visible: Boolean,
-    displayName: String,
     accessToken: String,
-    onDisplayNameChange: (String) -> Unit,
     onAccessTokenChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
@@ -1470,12 +1491,7 @@ private fun AddUserDialog(
         title = { Text("手动录入 Cookies") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedTextField(
-                    value = displayName,
-                    onValueChange = onDisplayNameChange,
-                    label = { Text("用户昵称") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Text("验证后自动使用姓名和学号命名")
                 OutlinedTextField(
                     value = accessToken,
                     onValueChange = onAccessTokenChange,

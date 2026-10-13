@@ -19,8 +19,7 @@ class SessionRepository(private val context: Context) {
             list += UserSession(
                 id = o.getString("id"),
                 displayName = o.getString("displayName"),
-                studentId = o.optString("studentId").takeIf { it.isNotBlank() }
-                    ?: Regex("\\(([0-9A-Za-z]{4,20})\\)$").find(o.getString("displayName"))?.groupValues?.get(1),
+                studentId = o.optString("studentId").takeIf { it.isNotBlank() },
                 accessToken = if (o.has("accessToken")) o.getString("accessToken") else null,
                 refreshToken = if (o.has("refreshToken")) o.getString("refreshToken") else null,
                 tokenExpiresAt = if (o.has("tokenExpiresAt")) o.getLong("tokenExpiresAt") else null,

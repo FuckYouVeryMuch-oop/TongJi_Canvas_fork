@@ -9,6 +9,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mln.tongji_canvas.data.SessionRepository
 import com.mln.tongji_canvas.data.SignHistoryStore
+import com.mln.tongji_canvas.data.SignSync
 import com.mln.tongji_canvas.ui.OAuth2LoginScreen
 import com.mln.tongji_canvas.ui.MainScreen
 import com.mln.tongji_canvas.ui.ScannerScreen
@@ -16,6 +17,7 @@ import com.mln.tongji_canvas.ui.SimpleScannerScreen
 import com.mln.tongji_canvas.ui.EnhancedScannerScreen
 import com.mln.tongji_canvas.ui.BatchSignScreen
 import com.mln.tongji_canvas.ui.SignHistoryScreen
+import com.mln.tongji_canvas.ui.SignSyncScreen
 import com.mln.tongji_canvas.ui.theme.Canvas_batch_signTheme
 
 class MainActivity : ComponentActivity() {
@@ -24,6 +26,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val repository = SessionRepository(this)
         val history = SignHistoryStore(this)
+        val sync = SignSync(this)
         setContent {
             Canvas_batch_signTheme {
                 val nav = rememberNavController()
@@ -31,6 +34,7 @@ class MainActivity : ComponentActivity() {
                     composable("main") {
                         MainScreen(
                             repository = repository,
+                            sync = sync,
                             onAddUser = { nav.navigate("login") },
                             onScanQr = { selectedUserIds ->
                                 // 将选中的用户ID列表编码为URL参数
@@ -38,6 +42,7 @@ class MainActivity : ComponentActivity() {
                                 nav.navigate("scanner?selectedUsers=" + java.net.URLEncoder.encode(userIdsParam, "UTF-8"))
                             },
                             onOpenHistory = { nav.navigate("history") },
+                            onOpenSync = { nav.navigate("sync") },
                             onTestSession = { /* TODO: open test page with cookies */ }
                         )
                     }
@@ -46,6 +51,9 @@ class MainActivity : ComponentActivity() {
                     }
                     composable("history") {
                         SignHistoryScreen(store = history, onBack = { nav.popBackStack() })
+                    }
+                    composable("sync") {
+                        SignSyncScreen(repository, sync, onBack = { nav.popBackStack() })
                     }
                     composable("scanner?selectedUsers={selectedUsers}") { backStackEntry ->
                         val selectedUsersParam = backStackEntry.arguments?.getString("selectedUsers")?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: ""
@@ -67,11 +75,11 @@ class MainActivity : ComponentActivity() {
                         } else {
                             emptySet<String>()
                         }
-                        BatchSignScreen(repository = repository, targetUrl = url, selectedUserIds = selectedUserIds)
+                        BatchSignScreen(repository = repository, sync = sync, targetUrl = url, selectedUserIds = selectedUserIds)
                     }
                     composable("batchsign?url={url}") { backStackEntry ->
                         val url = backStackEntry.arguments?.getString("url")?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: ""
-                        BatchSignScreen(repository = repository, targetUrl = url, selectedUserIds = emptySet())
+                        BatchSignScreen(repository = repository, sync = sync, targetUrl = url, selectedUserIds = emptySet())
                     }
                 }
             }

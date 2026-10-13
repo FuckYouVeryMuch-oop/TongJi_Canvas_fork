@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PhoneIphone
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.IosShare
@@ -72,6 +73,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -91,6 +94,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import com.mln.tongji_canvas.data.Course
 import com.mln.tongji_canvas.data.CredentialVerifier
 import com.mln.tongji_canvas.data.SessionRepository
+import com.mln.tongji_canvas.data.SignSync
 import com.mln.tongji_canvas.data.UserSession
 import com.mln.tongji_canvas.ui.components.EmptyStatePanel
 import com.mln.tongji_canvas.ui.theme.CanvasPalette
@@ -105,9 +109,11 @@ import java.util.Locale
 @Composable
 fun MainScreen(
     repository: SessionRepository,
+    sync: SignSync,
     onAddUser: () -> Unit,
     onScanQr: (List<String>) -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenSync: () -> Unit,
     onTestSession: (UserSession) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -119,6 +125,7 @@ fun MainScreen(
     val clipboardManager = LocalClipboardManager.current
 
     var sessions by remember { mutableStateOf<List<UserSession>>(emptyList()) }
+    var syncSummary by remember { mutableStateOf("") }
     var courses by remember { mutableStateOf<List<Course>>(emptyList()) }
     var selectedUserIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val checkedCourseIds = courses.filter { course ->
@@ -306,6 +313,19 @@ fun MainScreen(
 
     LaunchedEffect(repository) { refreshSessions() }
 
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        scope.launch {
+            if (sync.enabled()) {
+                sync.flush()
+                repository.getAllSessions().firstOrNull { it.id == sync.ownAccountId() }?.let { sync.refresh(it) }
+            }
+            syncSummary = if (sync.enabled() && sync.ownAccountId() != null) {
+                sync.cachedEvents().firstOrNull()?.let { "最近同步：课程 ${it.courseCode} 已签到" }
+                    ?: "暂无同步结果"
+            } else ""
+        }
+    }
+
     LaunchedEffect(sessions) {
         if (sessions.isEmpty()) return@LaunchedEffect
         val allIds = sessions.map { it.id }.toSet()
@@ -353,10 +373,12 @@ fun MainScreen(
                 sessionCount = sessions.size,
                 selectedCount = selectedUserIds.size,
                 courseCount = courses.size,
+                syncSummary = syncSummary,
                 scrollBehavior = scrollBehavior,
                 onImportClick = { importSessionsFromClipboard() },
                 onExportClick = { exportSessionsToClipboard() },
                 onHistoryClick = onOpenHistory,
+                onSyncClick = onOpenSync,
                 onAboutClick = {
                     val intent = Intent(context, com.mln.tongji_canvas.AboutActivity::class.java)
                     context.startActivity(intent)
@@ -449,6 +471,11 @@ fun MainScreen(
                         },
                         onDeleteUser = { session ->
                             scope.launch {
+                                if (sync.ownAccountId() == session.id) {
+                                    sync.setEnabled(false)
+                                    sync.setOwnAccount(null)
+                                    syncSummary = ""
+                                }
                                 repository.removeSession(session.id)
                                 // 同时从所有课程中移除该用户
                                 val allCourses = repository.getAllCourses()
@@ -510,6 +537,11 @@ fun MainScreen(
         },
         onSave = { session ->
             scope.launch {
+                if (sync.ownAccountId() == session.id && editAccessToken != session.accessToken.orEmpty()) {
+                    sync.setEnabled(false)
+                    sync.setOwnAccount(null)
+                    syncSummary = ""
+                }
                 repository.updateSession(session.copy(
                     displayName = editDisplayName,
                     accessToken = editAccessToken.ifBlank { null }
@@ -878,10 +910,12 @@ private fun MainScreenTopBar(
     sessionCount: Int,
     selectedCount: Int,
     courseCount: Int,
+    syncSummary: String,
     scrollBehavior: TopAppBarScrollBehavior,
     onImportClick: () -> Unit,
     onExportClick: () -> Unit,
     onHistoryClick: () -> Unit,
+    onSyncClick: () -> Unit,
     onAboutClick: () -> Unit
 ) {
     val isDark = isSystemInDarkTheme()
@@ -918,6 +952,7 @@ private fun MainScreenTopBar(
                         }
                     }
                 }
+                if (syncSummary.isNotEmpty()) Text(syncSummary, style = MaterialTheme.typography.bodySmall)
             }
         },
         actions = {
@@ -939,6 +974,11 @@ private fun MainScreenTopBar(
                 icon = Icons.Outlined.History,
                 contentDescription = "签到历史",
                 onClick = onHistoryClick
+            )
+            TopBarActionButton(
+                icon = Icons.Outlined.Sync,
+                contentDescription = "同步签到",
+                onClick = onSyncClick
             )
             TopBarActionButton(
                 icon = Icons.Rounded.Info,

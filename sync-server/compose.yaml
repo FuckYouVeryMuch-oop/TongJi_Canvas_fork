@@ -1,0 +1,12 @@
+services:
+  sign-sync:
+    build: .
+    environment:
+      SYNC_DB: /data/events.sqlite3
+      SYNC_HMAC_KEY: ${SYNC_HMAC_KEY:?set a persistent random key}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./data:/data
+    mem_limit: 128m
+    restart: unless-stopped

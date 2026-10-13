@@ -37,6 +37,7 @@ import com.mln.tongji_canvas.data.SignHistoryStore
 import com.mln.tongji_canvas.data.SignInClient
 import com.mln.tongji_canvas.data.SignResult
 import com.mln.tongji_canvas.data.SignStatus
+import com.mln.tongji_canvas.data.SignSync
 import com.mln.tongji_canvas.data.UserSession
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
@@ -45,6 +46,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun BatchSignScreen(
     repository: SessionRepository,
+    sync: SignSync,
     targetUrl: String,
     selectedUserIds: Set<String> = emptySet()
 ) {
@@ -69,6 +71,12 @@ fun BatchSignScreen(
         history.add(url, targets.mapNotNull { account ->
             results[account.id]?.let { account to it }
         })
+        if (sync.enabled()) {
+            targets.forEach { account ->
+                results[account.id]?.let { sync.enqueue(account, url, it) }
+            }
+            scope.launch { sync.flush() }
+        }
         running = false
     }
 

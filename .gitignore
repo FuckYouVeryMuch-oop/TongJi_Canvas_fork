@@ -65,6 +65,10 @@ crashlytics.properties
 # Node.js
 node_modules/
 npm-debug.log*
+sync-server/data/
+sync-server/.env
+__pycache__/
+*.pyc
 
 # Web files (if any)
 web/dist/

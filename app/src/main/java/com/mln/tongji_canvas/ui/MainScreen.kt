@@ -119,7 +119,9 @@ fun MainScreen(
     var sessions by remember { mutableStateOf<List<UserSession>>(emptyList()) }
     var courses by remember { mutableStateOf<List<Course>>(emptyList()) }
     var selectedUserIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var checkedCourseIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val checkedCourseIds = courses.filter { course ->
+        course.memberIds.isNotEmpty() && course.memberIds.all { it in selectedUserIds }
+    }.map { it.id }.toSet()
     var editingSession by remember { mutableStateOf<UserSession?>(null) }
     var editDisplayName by remember { mutableStateOf("") }
     var editAccessToken by remember { mutableStateOf("") }
@@ -336,11 +338,6 @@ fun MainScreen(
         repository.saveAllUsersExpanded(allUsersExpanded)
     }
 
-    LaunchedEffect(courses) {
-        val validCourseIds = courses.map { it.id }.toSet()
-        checkedCourseIds = checkedCourseIds.filter { validCourseIds.contains(it) }.toSet()
-    }
-
     val topBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topBarState)
 
@@ -417,6 +414,12 @@ fun MainScreen(
                         checkedCourseIds = checkedCourseIds,
                         allUsersExpanded = allUsersExpanded,
                         onToggleAllUsersExpanded = { allUsersExpanded = !allUsersExpanded },
+                        onToggleAllSelection = {
+                            val allIds = sessions.map { it.id }.toSet()
+                            val updated = if (allIds.all { it in selectedUserIds }) emptySet() else allIds
+                            selectedUserIds = updated
+                            scope.launch { repository.saveSelectedUserIds(updated) }
+                        },
                         onToggleSelection = { id, checked ->
                             val updated = if (checked) selectedUserIds + id else selectedUserIds - id
                             selectedUserIds = updated
@@ -428,13 +431,11 @@ fun MainScreen(
                                 sessions.any { it.id == mid }
                             }
                             selectedUserIds = updated
-                            checkedCourseIds = checkedCourseIds + course.id
                             scope.launch { repository.saveSelectedUserIds(updated) }
                         },
                         onDeselectAllInCourse = { course ->
                             val updated = selectedUserIds - course.memberIds.toSet()
                             selectedUserIds = updated
-                            checkedCourseIds = checkedCourseIds - course.id
                             scope.launch { repository.saveSelectedUserIds(updated) }
                         },
                         onEditUser = { session ->
@@ -657,6 +658,7 @@ private fun GroupedSessionList(
     checkedCourseIds: Set<String>,
     allUsersExpanded: Boolean,
     onToggleAllUsersExpanded: () -> Unit,
+    onToggleAllSelection: () -> Unit,
     onToggleSelection: (String, Boolean) -> Unit,
     onSelectAllInCourse: (Course) -> Unit,
     onDeselectAllInCourse: (Course) -> Unit,
@@ -678,7 +680,9 @@ private fun GroupedSessionList(
                 icon = Icons.Outlined.People,
                 expanded = allUsersExpanded,
                 onToggleExpanded = onToggleAllUsersExpanded,
-                accentColor = if (isDark) CanvasPalette.PurpleAccentDark else CanvasPalette.PurpleAccent
+                accentColor = if (isDark) CanvasPalette.PurpleAccentDark else CanvasPalette.PurpleAccent,
+                allSelected = sessions.isNotEmpty() && sessions.all { it.id in selectedUserIds },
+                onToggleSelectAll = onToggleAllSelection
             )
         }
 
@@ -756,7 +760,9 @@ private fun GroupHeader(
     icon: ImageVector,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
-    accentColor: Color
+    accentColor: Color,
+    allSelected: Boolean,
+    onToggleSelectAll: () -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -788,6 +794,11 @@ private fun GroupHeader(
                     style = MaterialTheme.typography.labelMedium,
                     color = accentColor
                 )
+            }
+            if (count > 0) {
+                TextButton(onClick = onToggleSelectAll) {
+                    Text(if (allSelected) "取消全选" else "全选")
+                }
             }
             Icon(
                 if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,

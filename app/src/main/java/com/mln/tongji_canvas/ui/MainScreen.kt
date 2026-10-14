@@ -70,6 +70,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -77,11 +78,14 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -149,6 +153,10 @@ fun MainScreen(
     var importError by remember { mutableStateOf<String?>(null) }
     var showAddMenu by remember { mutableStateOf(false) }
     var showGuide by remember { mutableStateOf(onboarding.shouldShowAutomatically()) }
+    var showToolbarTour by remember { mutableStateOf(showGuide) }
+    var toolbarTourStep by remember { mutableStateOf(0) }
+    val toolbarBounds = remember { mutableStateMapOf<Int, Rect>() }
+    var hasCopiedOwn by remember { mutableStateOf(false) }
     var showShareWarning by remember { mutableStateOf(false) }
     var showBackupWarning by remember { mutableStateOf(false) }
 
@@ -215,10 +223,9 @@ fun MainScreen(
             scope.launch { snackbarHostState.showSnackbar("请先在同步设置中标记并验证本人账号") }
             return
         }
-        val user = JSONObject().put("displayName", own.displayName).put("accessToken", credential)
-        val data = JSONObject().put("users", JSONArray().put(user))
-        clipboardManager.setText(AnnotatedString(data.toString()))
-        scope.launch { snackbarHostState.showSnackbar("已复制本人账号凭证，请只发给互相信任的人") }
+        clipboardManager.setText(AnnotatedString(credential))
+        hasCopiedOwn = true
+        scope.launch { snackbarHostState.showSnackbar("已复制我的 cookies，请只发给互相信任的人") }
     }
 
     fun importSessionsFromClipboard() {
@@ -289,7 +296,7 @@ fun MainScreen(
                             coursesImported++
                         }
                     }
-                } else {
+                } else if (raw.startsWith("[")) {
                     // 兼容旧格式（纯数组）
                     val array = JSONArray(raw)
                     for (i in 0 until array.length()) {
@@ -310,6 +317,19 @@ fun MainScreen(
                             repository.addOrUpdateSession(verified.displayName, tokens, verified.studentId)
                             imported++
                         }
+                    }
+                } else {
+                    val verified = CredentialVerifier.verify(raw)
+                    if (verified == null) {
+                        failed++
+                    } else {
+                        val tokens = com.mln.tongji_canvas.data.OAuth2Tokens(
+                            accessToken = raw,
+                            refreshToken = null,
+                            expiresIn = 3600L
+                        )
+                        repository.addOrUpdateSession(verified.displayName, tokens, verified.studentId)
+                        imported++
                     }
                 }
 
@@ -339,7 +359,11 @@ fun MainScreen(
     LaunchedEffect(repository) { refreshSessions() }
 
     LaunchedEffect(guideRequest) {
-        if (guideRequest > 0) showGuide = true
+        if (guideRequest > 0) {
+            showGuide = true
+            showToolbarTour = true
+            toolbarTourStep = 0
+        }
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -395,6 +419,7 @@ fun MainScreen(
     val topBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topBarState)
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -407,6 +432,9 @@ fun MainScreen(
                 courseCount = courses.size,
                 syncSummary = syncSummary,
                 scrollBehavior = scrollBehavior,
+                onActionPositioned = { index, bounds ->
+                    if (toolbarBounds[index] != bounds) toolbarBounds[index] = bounds
+                },
                 onImportClick = { importSessionsFromClipboard() },
                 onShareOwnClick = { showShareWarning = true },
                 onBackupClick = { showBackupWarning = true },
@@ -455,6 +483,7 @@ fun MainScreen(
                 OnboardingCard(
                     hasAccount = sessions.isNotEmpty(),
                     hasOwnAccount = sessions.any { it.id == ownAccountId },
+                    hasCopiedOwn = hasCopiedOwn,
                     hasFriend = sessions.size >= 2,
                     hasSelection = selectedUserIds.isNotEmpty(),
                     hasScanned = hasScanned,
@@ -462,11 +491,11 @@ fun MainScreen(
                     onAdd = { showAddMenu = true },
                     onChooseOwn = onOpenSync,
                     onShareOwn = { showShareWarning = true },
-                    onImport = { importSessionsFromClipboard() },
+                    onImport = { showAddMenu = true },
                     onScan = { onScanQr(selectedUserIds.toList()) },
                     onSync = onOpenSync,
-                    onSkip = { onboarding.skip(); showGuide = false },
-                    onComplete = { onboarding.complete(); showGuide = false }
+                    onSkip = { onboarding.skip(); showGuide = false; showToolbarTour = false },
+                    onComplete = { onboarding.complete(); showGuide = false; showToolbarTour = false }
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -559,6 +588,19 @@ fun MainScreen(
             }
         }
     }
+    if (showGuide && showToolbarTour) {
+        toolbarBounds[toolbarTourStep]?.let { bounds ->
+            ToolbarTourOverlay(
+                target = bounds,
+                index = toolbarTourStep,
+                onNext = {
+                    if (toolbarTourStep == 4) showToolbarTour = false else toolbarTourStep++
+                },
+                onSkip = { showToolbarTour = false }
+            )
+        }
+    }
+    }
 
     AddUserMenu(
         expanded = showAddMenu,
@@ -576,9 +618,9 @@ fun MainScreen(
     if (showShareWarning) {
         AlertDialog(
             onDismissRequest = { showShareWarning = false },
-            title = { Text("分享本人账号") },
-            text = { Text("Canvas session 相当于登录凭证。只发给互相信任的人；本次只复制你标记为本人的一个账号，不包含朋友账号或课程分组。") },
-            confirmButton = { TextButton(onClick = { showShareWarning = false; shareOwnAccount() }) { Text("复制本人凭证") } },
+            title = { Text("分享我的 cookies") },
+            text = { Text("Canvas cookies 相当于登录凭证。只发给互相信任的人；本次只复制你标记为本人的账号 cookies，不包含朋友账号或课程分组。") },
+            confirmButton = { TextButton(onClick = { showShareWarning = false; shareOwnAccount() }) { Text("复制我的cookies") } },
             dismissButton = { TextButton(onClick = { showShareWarning = false }) { Text("取消") } }
         )
     }
@@ -990,6 +1032,7 @@ private fun MainScreenTopBar(
     courseCount: Int,
     syncSummary: String,
     scrollBehavior: TopAppBarScrollBehavior,
+    onActionPositioned: (Int, Rect) -> Unit,
     onImportClick: () -> Unit,
     onShareOwnClick: () -> Unit,
     onBackupClick: () -> Unit,
@@ -1041,6 +1084,7 @@ private fun MainScreenTopBar(
                 contentDescription = "剪贴板导入",
                 iconVerticalOffset =  (-0.2).dp,// 导入按钮图标稍微往上移，视觉平衡
                 iconSize = (20.3).dp, // 导入按钮图标稍微小一点，视觉平衡
+                onPositioned = { onActionPositioned(0, it) },
                 onClick = onImportClick
             )
             Box {
@@ -1049,6 +1093,7 @@ private fun MainScreenTopBar(
                     contentDescription = "分享本人或备份全部账号",
                     iconVerticalOffset = (-1.2).dp,
                     iconSize = (22.2).dp,
+                    onPositioned = { onActionPositioned(1, it) },
                     onClick = { showExportMenu = true }
                 )
                 DropdownMenu(expanded = showExportMenu, onDismissRequest = { showExportMenu = false }) {
@@ -1065,11 +1110,13 @@ private fun MainScreenTopBar(
             TopBarActionButton(
                 icon = Icons.Outlined.History,
                 contentDescription = "签到历史",
+                onPositioned = { onActionPositioned(2, it) },
                 onClick = onHistoryClick
             )
             TopBarActionButton(
                 icon = Icons.Outlined.Sync,
                 contentDescription = "同步签到",
+                onPositioned = { onActionPositioned(3, it) },
                 onClick = onSyncClick
             )
             TopBarActionButton(
@@ -1077,6 +1124,7 @@ private fun MainScreenTopBar(
                 contentDescription = "关于",
                 iconVerticalOffset = 0.dp, 
                 iconSize = 22.dp, // 关于按钮稍微大一点，视觉平衡
+                onPositioned = { onActionPositioned(4, it) },
                 onClick = onAboutClick
             )
         },
@@ -1090,11 +1138,12 @@ private fun TopBarActionButton(
     contentDescription: String,
     iconVerticalOffset: androidx.compose.ui.unit.Dp = 0.dp,
     iconSize: androidx.compose.ui.unit.Dp = 21.dp,  // 新增图标大小参数
+    onPositioned: (Rect) -> Unit,
     onClick: () -> Unit
 ) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(44.dp),
+        modifier = Modifier.size(44.dp).onGloballyPositioned { onPositioned(it.boundsInRoot()) },
         colors = IconButtonDefaults.iconButtonColors(
             contentColor = MaterialTheme.colorScheme.onSurface
         )

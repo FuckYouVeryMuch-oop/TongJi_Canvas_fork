@@ -28,5 +28,8 @@
     <string name="about_developer_name">mmmlllnnn</string>
     <string name="about_github_label">Github &amp; Feedback</string>
     <string name="about_github_url">https://github.com/mmmlllnnn</string>
+    <string name="about_contributor_avatar_desc">Contributor Avatar</string>
+    <string name="about_contributor_name">FuckYouVeryMuch-oop</string>
+    <string name="about_contributor_github_url">https://github.com/FuckYouVeryMuch-oop</string>
     <string name="about_dynamic_content_url">https://raw.githubusercontent.com/mmmlllnnn/TongJi_Canvas/refs/heads/main/explanation.md</string>
 </resources>

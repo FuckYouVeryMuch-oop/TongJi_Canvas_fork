@@ -82,13 +82,43 @@ fun SignSyncScreen(repository: SessionRepository, sync: SignSync, onBack: () -> 
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("同步的签到结果", style = MaterialTheme.typography.titleLarge)
-            Text("开启后，本机成功签到或收到“已签到过”时会上报结果；打开应用可查看本人账号的同步结果。结果由应用上报，确认时间不等于 Canvas 实际签到时间。")
-            Text("Canvas session 相当于登录凭证，只与互相信任的人分享。关闭同步会停止上传和读取、清除待上传内容；服务器已保存的结果不会立即删除。")
+            Text("开启同步", style = MaterialTheme.typography.titleLarge)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(if (enabled) "已开启" else "未开启（默认关闭）")
+                Switch(checked = enabled, enabled = !busy, onCheckedChange = { value ->
+                    if (value && ownId == null) {
+                        message = "请先在下方选择本人账号，再开启同步"
+                    } else {
+                        scope.launch {
+                            sync.setEnabled(value)
+                            enabled = value
+                            if (value) refresh() else { events = emptyList(); message = null }
+                        }
+                    }
+                })
+            }
+            if (ownId == null) Text("先在下方选择本人账号，再打开开关。")
+            message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+            Text("同步结果", style = MaterialTheme.typography.titleMedium)
+            if (enabled && ownId != null) {
+                Button(onClick = { scope.launch { refresh() } }, enabled = !busy) { Text("刷新结果") }
+                if (lastSync > 0L) Text("上次同步：${formatTime(lastSync)}")
+                if (events.isEmpty()) Text("暂时没有朋友帮你签到的结果")
+                events.forEach { event ->
+                    Text("课程 ${event.courseCode}：已签到 · 确认时间 ${formatTime(event.confirmedAt)}")
+                }
+            } else {
+                Text("开启同步并选择本人账号后，朋友帮你签到的结果会显示在这里。")
+            }
+
             Text("选择本人账号", style = MaterialTheme.typography.titleMedium)
+            Text("选中你自己的账号，才会看到朋友为这个账号签到的结果。")
+            if (accounts.isEmpty()) Text("还没有账号，请先返回首页添加。")
             accounts.forEach { account ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = account.id == ownId, onClick = {
+                    RadioButton(selected = account.id == ownId, enabled = !busy, onClick = {
                         scope.launch {
                             busy = true
                             val verified = account.accessToken?.let { CredentialVerifier.verify(it) }
@@ -108,26 +138,13 @@ fun SignSyncScreen(repository: SessionRepository, sync: SignSync, onBack: () -> 
                     Text(account.displayName)
                 }
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("开启同步（默认关闭）")
-                Switch(checked = enabled, enabled = !busy && ownId != null, onCheckedChange = { value ->
-                    scope.launch {
-                        sync.setEnabled(value)
-                        enabled = value
-                        if (value) refresh() else { events = emptyList(); message = null }
-                    }
-                })
-            }
-            if (enabled && ownId != null) {
-                Button(onClick = { scope.launch { refresh() } }, enabled = !busy) { Text("刷新结果") }
-                message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (lastSync > 0L) Text("上次同步：${formatTime(lastSync)}")
-                if (events.isEmpty()) Text("暂无同步结果")
-                events.forEach { event ->
-                    Text("课程 ${event.courseCode}：已签到 · 确认时间 ${formatTime(event.confirmedAt)}")
-                }
-            }
+
+            Text("使用提示", style = MaterialTheme.typography.titleMedium)
+            Text("你和朋友都开启同步后，朋友帮你签到时，他的应用会上报结果。你点击“刷新结果”，就能在上方看到。你帮朋友签到时，你的应用也会为朋友上报结果。")
+            Text("帮签的朋友未开启同步时，这次结果不会上传；你未开启同步时，也无法读取已上传的结果。人人为我，我为人人。")
+            Text("显示的确认时间是应用上报的时间，不一定是 Canvas 中的实际签到时间。")
+            Text("只把 cookies 分享给信任的人，因为它可以用于登录你的 Canvas。你的 session 更换后，持旧 cookies 的朋友需要你重新分享新凭证，才能继续帮签。")
+            Text("关闭同步后，本机停止上传和读取，并清除待上传内容；开启同步后，签到结果会上传到服务器暂存。服务器保存 session 摘要和签到结果，不保存原始 cookies；查询仅显示近 30 天的结果，过期数据会在后续上报时清理。")
         }
     }
 }

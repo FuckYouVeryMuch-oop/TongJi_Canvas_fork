@@ -1,0 +1,21 @@
+http://127.0.0.1:8080 {
+    bind 127.0.0.1
+    reverse_proxy 127.0.0.1:3782
+}
+http://8.153.174.254 {
+    handle /.well-known/acme-challenge/* {
+        root * /var/www/letsencrypt
+        file_server
+    }
+    respond 404
+}
+
+:443 {
+    tls /etc/caddy/certs/ip-fullchain.pem /etc/caddy/certs/ip-privkey.pem
+    handle_path /sign-sync/* {
+        reverse_proxy 127.0.0.1:8787
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3782
+    }
+}

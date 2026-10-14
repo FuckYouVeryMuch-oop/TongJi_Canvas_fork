@@ -136,4 +136,4 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     initialize()
-    ThreadingHTTPServer(("0.0.0.0", 8787), Handler).serve_forever()
+    ThreadingHTTPServer((os.environ.get("SYNC_BIND", "127.0.0.1"), 8787), Handler).serve_forever()

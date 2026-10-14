@@ -1,0 +1,25 @@
+[Unit]
+Description=TongJi Canvas sign result sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tongji-sync
+Group=tongji-sync
+WorkingDirectory=/opt/tongji-sign-sync
+EnvironmentFile=/opt/tongji-sign-sync/.env
+Environment=SYNC_DB=/opt/tongji-sign-sync/data/events.sqlite3
+Environment=SYNC_BIND=127.0.0.1
+ExecStart=/usr/bin/python3 /opt/tongji-sign-sync/server.py
+Restart=on-failure
+RestartSec=3
+MemoryMax=128M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tongji-sign-sync/data
+
+[Install]
+WantedBy=multi-user.target

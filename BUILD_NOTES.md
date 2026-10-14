@@ -18,4 +18,4 @@ New-Item -ItemType Directory -Force output | Out-Null
 Copy-Item app\build\outputs\apk\debug\app-universal-debug.apk output\TongJi_Canvas-feat-rich-sync-universal-debug.apk
 ```
 
-`sync-server/test_server.py` 通过本地 HTTP 接口测试。服务没有部署，因此手机与公网 HTTPS 的端到端同步尚未验证。
+`sync-server/test_server.py` 通过本地 HTTP 接口测试。服务已部署，公网 HTTPS 的合成事件读写与隔离验证见 [部署记录](sync-server/DEPLOYMENT.md)；真实手机扫码与跨设备同步尚未验证。

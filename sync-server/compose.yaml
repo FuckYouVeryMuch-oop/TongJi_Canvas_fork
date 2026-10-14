@@ -3,6 +3,7 @@ services:
     build: .
     environment:
       SYNC_DB: /data/events.sqlite3
+      SYNC_BIND: 0.0.0.0
       SYNC_HMAC_KEY: ${SYNC_HMAC_KEY:?set a persistent random key}
     ports:
       - "127.0.0.1:8787:8787"

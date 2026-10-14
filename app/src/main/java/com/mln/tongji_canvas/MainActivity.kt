@@ -1,9 +1,13 @@
 package com.mln.tongji_canvas
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -21,8 +25,11 @@ import com.mln.tongji_canvas.ui.SignSyncScreen
 import com.mln.tongji_canvas.ui.theme.Canvas_batch_signTheme
 
 class MainActivity : ComponentActivity() {
+    private var guideRequest by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent.getBooleanExtra("open_guide", false)) guideRequest++
         enableEdgeToEdge()
         val repository = SessionRepository(this)
         val history = SignHistoryStore(this)
@@ -35,6 +42,7 @@ class MainActivity : ComponentActivity() {
                         MainScreen(
                             repository = repository,
                             sync = sync,
+                            guideRequest = guideRequest,
                             onAddUser = { nav.navigate("login") },
                             onScanQr = { selectedUserIds ->
                                 // 将选中的用户ID列表编码为URL参数
@@ -84,5 +92,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("open_guide", false)) guideRequest++
     }
 }

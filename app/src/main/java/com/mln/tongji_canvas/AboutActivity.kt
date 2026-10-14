@@ -1,6 +1,7 @@
 package com.mln.tongji_canvas
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -64,7 +66,13 @@ class AboutActivity : ComponentActivity() {
         setContent {
             Canvas_batch_signTheme {
                 AboutScreen(
-                    onBackPressed = { finish() }
+                    onBackPressed = { finish() },
+                    onOpenGuide = {
+                        startActivity(Intent(this, MainActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            .putExtra("open_guide", true))
+                        finish()
+                    }
                 )
             }
         }
@@ -75,7 +83,8 @@ class AboutActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(
-    onBackPressed: () -> Unit
+    onBackPressed: () -> Unit,
+    onOpenGuide: () -> Unit
 ) {
     var dynamicContent by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
@@ -177,6 +186,7 @@ fun AboutScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
+            TextButton(onClick = onOpenGuide) { Text("查看新手引导") }
             
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             

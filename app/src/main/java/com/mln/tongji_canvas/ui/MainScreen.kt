@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,7 +94,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import com.mln.tongji_canvas.data.Course
 import com.mln.tongji_canvas.data.CredentialVerifier
+import com.mln.tongji_canvas.data.OnboardingStore
 import com.mln.tongji_canvas.data.SessionRepository
+import com.mln.tongji_canvas.data.SignHistoryStore
 import com.mln.tongji_canvas.data.SignSync
 import com.mln.tongji_canvas.data.UserSession
 import com.mln.tongji_canvas.ui.components.EmptyStatePanel
@@ -110,6 +113,7 @@ import java.util.Locale
 fun MainScreen(
     repository: SessionRepository,
     sync: SignSync,
+    guideRequest: Int,
     onAddUser: () -> Unit,
     onScanQr: (List<String>) -> Unit,
     onOpenHistory: () -> Unit,
@@ -119,6 +123,8 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val onboarding = remember { OnboardingStore(context) }
+    val localHistory = remember { SignHistoryStore(context) }
     val haptics = LocalHapticFeedback.current
     val isDark = isSystemInDarkTheme()
     val pageBackground = MaterialTheme.colorScheme.background
@@ -126,6 +132,7 @@ fun MainScreen(
 
     var sessions by remember { mutableStateOf<List<UserSession>>(emptyList()) }
     var syncSummary by remember { mutableStateOf("") }
+    var hasScanned by remember { mutableStateOf(false) }
     var courses by remember { mutableStateOf<List<Course>>(emptyList()) }
     var selectedUserIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val checkedCourseIds = courses.filter { course ->
@@ -139,6 +146,9 @@ fun MainScreen(
     var addAccessToken by remember { mutableStateOf("") }
     var importError by remember { mutableStateOf<String?>(null) }
     var showAddMenu by remember { mutableStateOf(false) }
+    var showGuide by remember { mutableStateOf(onboarding.shouldShowAutomatically()) }
+    var showShareWarning by remember { mutableStateOf(false) }
+    var showBackupWarning by remember { mutableStateOf(false) }
 
     // 课程相关状态
     var showAddCourseDialog by remember { mutableStateOf(false) }
@@ -194,6 +204,19 @@ fun MainScreen(
             clipboardManager.setText(AnnotatedString(root.toString()))
             snackbarHostState.showSnackbar("已导出账号（${exportable.size}个）和课程分组（${courses.size}个）")
         }
+    }
+
+    fun shareOwnAccount() {
+        val own = sessions.firstOrNull { it.id == sync.ownAccountId() }
+        val credential = own?.accessToken
+        if (own == null || credential.isNullOrBlank()) {
+            scope.launch { snackbarHostState.showSnackbar("请先在同步设置中标记并验证本人账号") }
+            return
+        }
+        val user = JSONObject().put("displayName", own.displayName).put("accessToken", credential)
+        val data = JSONObject().put("users", JSONArray().put(user))
+        clipboardManager.setText(AnnotatedString(data.toString()))
+        scope.launch { snackbarHostState.showSnackbar("已复制本人账号凭证，请只发给互相信任的人") }
     }
 
     fun importSessionsFromClipboard() {
@@ -313,8 +336,13 @@ fun MainScreen(
 
     LaunchedEffect(repository) { refreshSessions() }
 
+    LaunchedEffect(guideRequest) {
+        if (guideRequest > 0) showGuide = true
+    }
+
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         scope.launch {
+            hasScanned = localHistory.list().isNotEmpty()
             if (sync.enabled()) {
                 sync.flush()
                 repository.getAllSessions().firstOrNull { it.id == sync.ownAccountId() }?.let { sync.refresh(it) }
@@ -376,7 +404,8 @@ fun MainScreen(
                 syncSummary = syncSummary,
                 scrollBehavior = scrollBehavior,
                 onImportClick = { importSessionsFromClipboard() },
-                onExportClick = { exportSessionsToClipboard() },
+                onShareOwnClick = { showShareWarning = true },
+                onBackupClick = { showBackupWarning = true },
                 onHistoryClick = onOpenHistory,
                 onSyncClick = onOpenSync,
                 onAboutClick = {
@@ -403,7 +432,7 @@ fun MainScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { inner ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(inner)
@@ -418,6 +447,26 @@ fun MainScreen(
                 )
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
+            if (showGuide) {
+                OnboardingCard(
+                    hasAccount = sessions.isNotEmpty(),
+                    hasOwnAccount = sessions.any { it.id == sync.ownAccountId() },
+                    hasFriend = sessions.size >= 2,
+                    hasSelection = selectedUserIds.isNotEmpty(),
+                    hasScanned = hasScanned,
+                    syncEnabled = sync.enabled(),
+                    onAdd = { showAddMenu = true },
+                    onChooseOwn = onOpenSync,
+                    onShareOwn = { showShareWarning = true },
+                    onImport = { importSessionsFromClipboard() },
+                    onScan = { onScanQr(selectedUserIds.toList()) },
+                    onSync = onOpenSync,
+                    onSkip = { onboarding.skip(); showGuide = false },
+                    onComplete = { onboarding.complete(); showGuide = false }
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            Box(Modifier.weight(1f)) {
             AnimatedContent(
                 targetState = sessions.isEmpty(),
                 label = "session_list_state"
@@ -501,6 +550,7 @@ fun MainScreen(
                     )
                 }
             }
+            }
         }
     }
 
@@ -516,6 +566,26 @@ fun MainScreen(
             addingUser = true
         }
     )
+
+    if (showShareWarning) {
+        AlertDialog(
+            onDismissRequest = { showShareWarning = false },
+            title = { Text("分享本人账号") },
+            text = { Text("Canvas session 相当于登录凭证。只发给互相信任的人；本次只复制你标记为本人的一个账号，不包含朋友账号或课程分组。") },
+            confirmButton = { TextButton(onClick = { showShareWarning = false; shareOwnAccount() }) { Text("复制本人凭证") } },
+            dismissButton = { TextButton(onClick = { showShareWarning = false }) { Text("取消") } }
+        )
+    }
+
+    if (showBackupWarning) {
+        AlertDialog(
+            onDismissRequest = { showBackupWarning = false },
+            title = { Text("备份全部账号和课程分组") },
+            text = { Text("这份备份包含所有账号的登录凭证。请勿把它当作“分享本人账号”发送给朋友。") },
+            confirmButton = { TextButton(onClick = { showBackupWarning = false; exportSessionsToClipboard() }) { Text("复制全部备份") } },
+            dismissButton = { TextButton(onClick = { showBackupWarning = false }) { Text("取消") } }
+        )
+    }
 
     // 编辑用户对话框（带课程分配）
     EditingDialogWithCourses(
@@ -913,12 +983,14 @@ private fun MainScreenTopBar(
     syncSummary: String,
     scrollBehavior: TopAppBarScrollBehavior,
     onImportClick: () -> Unit,
-    onExportClick: () -> Unit,
+    onShareOwnClick: () -> Unit,
+    onBackupClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onSyncClick: () -> Unit,
     onAboutClick: () -> Unit
 ) {
     val isDark = isSystemInDarkTheme()
+    var showExportMenu by remember { mutableStateOf(false) }
     androidx.compose.material3.LargeTopAppBar(
         title = {
             Column {
@@ -963,13 +1035,25 @@ private fun MainScreenTopBar(
                 iconSize = (20.3).dp, // 导入按钮图标稍微小一点，视觉平衡
                 onClick = onImportClick
             )
-            TopBarActionButton(
-                icon = Icons.Rounded.IosShare,
-                contentDescription = "导出账号",
-                iconVerticalOffset =  (-1.2).dp, // 导出按钮图标稍微往上移，视觉平衡
-                iconSize = (22.2).dp, // 导出按钮图标稍微大一点，视觉平衡
-                onClick = onExportClick
-            )
+            Box {
+                TopBarActionButton(
+                    icon = Icons.Rounded.IosShare,
+                    contentDescription = "分享本人或备份全部账号",
+                    iconVerticalOffset = (-1.2).dp,
+                    iconSize = (22.2).dp,
+                    onClick = { showExportMenu = true }
+                )
+                DropdownMenu(expanded = showExportMenu, onDismissRequest = { showExportMenu = false }) {
+                    DropdownMenuItem(text = { Text("分享本人账号") }, onClick = {
+                        showExportMenu = false
+                        onShareOwnClick()
+                    })
+                    DropdownMenuItem(text = { Text("备份全部账号和课程分组") }, onClick = {
+                        showExportMenu = false
+                        onBackupClick()
+                    })
+                }
+            }
             TopBarActionButton(
                 icon = Icons.Outlined.History,
                 contentDescription = "签到历史",

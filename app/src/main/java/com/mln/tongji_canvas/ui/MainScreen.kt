@@ -132,6 +132,8 @@ fun MainScreen(
 
     var sessions by remember { mutableStateOf<List<UserSession>>(emptyList()) }
     var syncSummary by remember { mutableStateOf("") }
+    var ownAccountId by remember { mutableStateOf(sync.ownAccountId()) }
+    var syncEnabled by remember { mutableStateOf(sync.enabled()) }
     var hasScanned by remember { mutableStateOf(false) }
     var courses by remember { mutableStateOf<List<Course>>(emptyList()) }
     var selectedUserIds by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -343,11 +345,13 @@ fun MainScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         scope.launch {
             hasScanned = localHistory.list().isNotEmpty()
-            if (sync.enabled()) {
+            ownAccountId = sync.ownAccountId()
+            syncEnabled = sync.enabled()
+            if (syncEnabled) {
                 sync.flush()
-                repository.getAllSessions().firstOrNull { it.id == sync.ownAccountId() }?.let { sync.refresh(it) }
+                repository.getAllSessions().firstOrNull { it.id == ownAccountId }?.let { sync.refresh(it) }
             }
-            syncSummary = if (sync.enabled() && sync.ownAccountId() != null) {
+            syncSummary = if (syncEnabled && ownAccountId != null) {
                 sync.cachedEvents().firstOrNull()?.let { "最近同步：课程 ${it.courseCode} 已签到" }
                     ?: "暂无同步结果"
             } else ""
@@ -450,11 +454,11 @@ fun MainScreen(
             if (showGuide) {
                 OnboardingCard(
                     hasAccount = sessions.isNotEmpty(),
-                    hasOwnAccount = sessions.any { it.id == sync.ownAccountId() },
+                    hasOwnAccount = sessions.any { it.id == ownAccountId },
                     hasFriend = sessions.size >= 2,
                     hasSelection = selectedUserIds.isNotEmpty(),
                     hasScanned = hasScanned,
-                    syncEnabled = sync.enabled(),
+                    syncEnabled = syncEnabled,
                     onAdd = { showAddMenu = true },
                     onChooseOwn = onOpenSync,
                     onShareOwn = { showShareWarning = true },
@@ -523,6 +527,8 @@ fun MainScreen(
                                 if (sync.ownAccountId() == session.id) {
                                     sync.setEnabled(false)
                                     sync.setOwnAccount(null)
+                                    ownAccountId = null
+                                    syncEnabled = false
                                     syncSummary = ""
                                 }
                                 repository.removeSession(session.id)
@@ -610,6 +616,8 @@ fun MainScreen(
                 if (sync.ownAccountId() == session.id && editAccessToken != session.accessToken.orEmpty()) {
                     sync.setEnabled(false)
                     sync.setOwnAccount(null)
+                    ownAccountId = null
+                    syncEnabled = false
                     syncSummary = ""
                 }
                 repository.updateSession(session.copy(

@@ -7,6 +7,7 @@
 - Android Studio 自带的 JDK 25 使 Kotlin 编译目标回退到 22，与项目的 Java 21 目标冲突。改用本机 Temurin JDK 21 编译，保持项目的 Java 目标不变。
 - 仓库原先用 `*.jar` 忽略了 Gradle Wrapper JAR，新 worktree 中运行 `gradlew.bat` 会报找不到 `GradleWrapperMain`。已用项目指定的 Gradle 9.0.0 生成 Wrapper JAR，并将其纳入此分支；现在可直接使用 `gradlew.bat`。
 - `apksigner.bat` 也需要 Java 环境；验证签名时沿用下面的 `JAVA_HOME`。最终 APK 的 v2 签名验证通过。
+- 引导卡片返回首页时若直接读取同步设置的 SharedPreferences，勾选状态可能不触发 Compose 重绘。已在首页恢复时把“本人”与同步开关读入界面状态，再进行显示。
 
 在 PowerShell 中，从本 worktree 根目录运行：
 

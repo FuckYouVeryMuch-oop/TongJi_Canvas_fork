@@ -20,13 +20,13 @@ object CredentialVerifier {
     suspend fun verify(rawCookie: String): VerifiedAccount? = withContext(Dispatchers.IO) {
         val cookie = rawCookie.trim().removePrefix("Cookie:").trim()
         if (cookie.isEmpty()) return@withContext null
-        val request = Request.Builder()
-            .url(PROBE_URL)
-            .header("Cookie", cookie)
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 Chrome/139.0.0.0 Mobile Safari/537.36")
-            .get()
-            .build()
         try {
+            val request = Request.Builder()
+                .url(PROBE_URL)
+                .header("Cookie", cookie)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 Chrome/139.0.0.0 Mobile Safari/537.36")
+                .get()
+                .build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext null
                 val body = response.body?.string().orEmpty()
@@ -35,6 +35,8 @@ object CredentialVerifier {
                 if (name != null && id != null) VerifiedAccount(name, id) else null
             }
         } catch (e: IOException) {
+            null
+        } catch (e: IllegalArgumentException) {
             null
         }
     }

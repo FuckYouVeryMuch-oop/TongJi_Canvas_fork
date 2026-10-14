@@ -26,6 +26,7 @@ fun OnboardingCard(
     hasSelection: Boolean,
     hasScanned: Boolean,
     syncEnabled: Boolean,
+    onImportBackup: () -> Unit,
     onAdd: () -> Unit,
     onChooseOwn: () -> Unit,
     onShareOwn: () -> Unit,
@@ -43,6 +44,8 @@ fun OnboardingCard(
         ) {
             Text("开始使用", style = MaterialTheme.typography.titleLarge)
             Text("按顺序完成，也可以随时跳过。", style = MaterialTheme.typography.bodySmall)
+            Text("0. 老用户：将之前备份的全部账号导入。")
+            TextButton(onClick = onImportBackup) { Text("从剪贴板一键导入") }
             Text("${if (hasAccount) "✓" else "1."} 添加本人账号：登录或导入后会验证姓名和学号。")
             TextButton(onClick = onAdd) { Text("添加账号") }
             Text("${if (hasCopiedOwn) "✓" else "2."} 分享给朋友：你的 cookies 复制到剪贴板中。")

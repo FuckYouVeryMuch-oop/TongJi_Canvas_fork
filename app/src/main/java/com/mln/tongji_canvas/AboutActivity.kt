@@ -20,7 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -188,7 +188,10 @@ fun AboutScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
-            TextButton(onClick = onOpenGuide) { Text("查看新手引导") }
+            Button(
+                onClick = onOpenGuide,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp)
+            ) { Text("查看新手引导", style = MaterialTheme.typography.titleMedium) }
             
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             
@@ -245,10 +248,11 @@ fun AboutScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Outlined.Person,
+                    Image(
+                        painter = painterResource(id = R.drawable.contributor_avatar),
                         contentDescription = stringResource(R.string.about_contributor_avatar_desc),
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(48.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop
                     )
                     Spacer(Modifier.width(12.dp))
                     Column {

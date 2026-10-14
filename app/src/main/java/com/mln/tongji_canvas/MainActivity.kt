@@ -29,7 +29,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (intent.getBooleanExtra("open_guide", false)) guideRequest++
+        if (intent.getBooleanExtra("open_guide", false)) {
+            guideRequest++
+            intent.removeExtra("open_guide")
+        }
         enableEdgeToEdge()
         val repository = SessionRepository(this)
         val history = SignHistoryStore(this)
@@ -43,6 +46,7 @@ class MainActivity : ComponentActivity() {
                             repository = repository,
                             sync = sync,
                             guideRequest = guideRequest,
+                            onGuideRequestConsumed = { guideRequest = 0 },
                             onAddUser = { nav.navigate("login") },
                             onScanQr = { selectedUserIds ->
                                 // 将选中的用户ID列表编码为URL参数
@@ -97,6 +101,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra("open_guide", false)) guideRequest++
+        if (intent.getBooleanExtra("open_guide", false)) {
+            guideRequest++
+            intent.removeExtra("open_guide")
+        }
     }
 }

@@ -118,6 +118,7 @@ fun MainScreen(
     repository: SessionRepository,
     sync: SignSync,
     guideRequest: Int,
+    onGuideRequestConsumed: () -> Unit,
     onAddUser: () -> Unit,
     onScanQr: (List<String>) -> Unit,
     onOpenHistory: () -> Unit,
@@ -153,7 +154,7 @@ fun MainScreen(
     var importError by remember { mutableStateOf<String?>(null) }
     var showAddMenu by remember { mutableStateOf(false) }
     var showGuide by remember { mutableStateOf(onboarding.shouldShowAutomatically()) }
-    var showToolbarTour by remember { mutableStateOf(showGuide) }
+    var showToolbarTour by remember { mutableStateOf(showGuide && onboarding.shouldShowToolbarTour()) }
     var toolbarTourStep by remember { mutableStateOf(0) }
     val toolbarBounds = remember { mutableStateMapOf<Int, Rect>() }
     var hasCopiedOwn by remember { mutableStateOf(false) }
@@ -228,9 +229,9 @@ fun MainScreen(
         scope.launch { snackbarHostState.showSnackbar("已复制我的 cookies，请只发给互相信任的人") }
     }
 
-    fun importSessionsFromClipboard() {
+    fun importSessionsFromClipboard(rawInput: String? = null) {
         scope.launch {
-            val raw = clipboardManager.getText()?.text?.trim()
+            val raw = rawInput?.trim() ?: clipboardManager.getText()?.text?.trim()
             if (raw.isNullOrEmpty()) {
                 snackbarHostState.showSnackbar("剪贴板为空")
                 return@launch
@@ -361,8 +362,9 @@ fun MainScreen(
     LaunchedEffect(guideRequest) {
         if (guideRequest > 0) {
             showGuide = true
-            showToolbarTour = true
+            showToolbarTour = onboarding.shouldShowToolbarTour()
             toolbarTourStep = 0
+            onGuideRequestConsumed()
         }
     }
 
@@ -488,14 +490,25 @@ fun MainScreen(
                     hasSelection = selectedUserIds.isNotEmpty(),
                     hasScanned = hasScanned,
                     syncEnabled = syncEnabled,
+                    onImportBackup = { importSessionsFromClipboard() },
                     onAdd = { showAddMenu = true },
                     onChooseOwn = onOpenSync,
                     onShareOwn = { showShareWarning = true },
                     onImport = { showAddMenu = true },
                     onScan = { onScanQr(selectedUserIds.toList()) },
                     onSync = onOpenSync,
-                    onSkip = { onboarding.skip(); showGuide = false; showToolbarTour = false },
-                    onComplete = { onboarding.complete(); showGuide = false; showToolbarTour = false }
+                    onSkip = {
+                        onboarding.skip()
+                        onboarding.markToolbarTourSeen()
+                        showGuide = false
+                        showToolbarTour = false
+                    },
+                    onComplete = {
+                        onboarding.complete()
+                        onboarding.markToolbarTourSeen()
+                        showGuide = false
+                        showToolbarTour = false
+                    }
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -594,9 +607,15 @@ fun MainScreen(
                 target = bounds,
                 index = toolbarTourStep,
                 onNext = {
-                    if (toolbarTourStep == 4) showToolbarTour = false else toolbarTourStep++
+                    if (toolbarTourStep == 4) {
+                        onboarding.markToolbarTourSeen()
+                        showToolbarTour = false
+                    } else toolbarTourStep++
                 },
-                onSkip = { showToolbarTour = false }
+                onSkip = {
+                    onboarding.markToolbarTourSeen()
+                    showToolbarTour = false
+                }
             )
         }
     }
@@ -696,6 +715,13 @@ fun MainScreen(
         },
         onConfirm = {
             if (addAccessToken.isNotBlank()) {
+                val input = addAccessToken.trim()
+                if (input.startsWith("{") || input.startsWith("[")) {
+                    addingUser = false
+                    addAccessToken = ""
+                    importSessionsFromClipboard(input)
+                    return@AddUserDialog
+                }
                 scope.launch {
                     val verified = CredentialVerifier.verify(addAccessToken)
                     if (verified == null) {

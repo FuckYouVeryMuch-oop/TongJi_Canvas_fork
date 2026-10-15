@@ -63,7 +63,7 @@ object SignInClient {
                 when {
                     listOf("已签过", "已签到过", "已经签到", "重复签到").any(text::contains) ->
                         result(SignStatus.ALREADY_SIGNED, "已签到过", response.code, course)
-                    text.contains("二维码已过期") || text.contains("二维码已失效") ->
+                    text.contains("过期") || text.contains("失效") ->
                         result(SignStatus.QR_EXPIRED, "二维码已过期，请重新扫码", response.code, course)
                     text.contains("签到失败") && text.contains("未加入此课程") ->
                         result(SignStatus.NOT_ENROLLED, "未加入此课程", response.code, course)

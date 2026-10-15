@@ -44,12 +44,16 @@ def initialize():
             session_key TEXT NOT NULL,
             student_id TEXT NOT NULL,
             course_code TEXT NOT NULL,
+            course_name TEXT,
             roll_call_digest TEXT NOT NULL,
             status TEXT NOT NULL,
             confirmed_at INTEGER NOT NULL,
             received_at INTEGER NOT NULL,
             PRIMARY KEY(session_key, course_code, roll_call_digest)
         )""")
+        columns = {row[1] for row in db.execute("PRAGMA table_info(events)")}
+        if "course_name" not in columns:
+            db.execute("ALTER TABLE events ADD COLUMN course_name TEXT")
         db.execute("CREATE INDEX IF NOT EXISTS events_recent ON events(session_key, received_at DESC)")
 
 
@@ -89,11 +93,15 @@ class Handler(BaseHTTPRequestHandler):
             key = session_key(data.get("session"))
             student = data.get("studentId")
             course = data.get("courseCode")
+            course_name = data.get("courseName")
             digest = data.get("rollCallDigest")
             status = data.get("status")
             confirmed = data.get("confirmedAt")
             if (not isinstance(student, str) or not STUDENT_RE.fullmatch(student)
                 or not isinstance(course, str) or not COURSE_RE.fullmatch(course)
+                or (course_name is not None and
+                    (not isinstance(course_name, str) or not 1 <= len(course_name) <= 120
+                     or any(ord(char) < 32 for char in course_name)))
                 or not isinstance(digest, str) or not DIGEST_RE.fullmatch(digest)
                 or status not in ("SUCCESS", "ALREADY_SIGNED")
                 or type(confirmed) is not int
@@ -104,10 +112,13 @@ class Handler(BaseHTTPRequestHandler):
         now = int(time.time() * 1000)
         with closing(connect()) as db, db:
             db.execute("DELETE FROM events WHERE received_at < ?", (now - 30 * 86400000,))
-            db.execute("""INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?)
+            db.execute("""INSERT INTO events
+                (session_key, student_id, course_code, course_name, roll_call_digest,
+                 status, confirmed_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_key, course_code, roll_call_digest) DO UPDATE SET
-                status = CASE WHEN events.status = 'SUCCESS' THEN 'SUCCESS' ELSE excluded.status END
-                """, (key, student, course, digest, status, confirmed, now))
+                status = CASE WHEN events.status = 'SUCCESS' THEN 'SUCCESS' ELSE excluded.status END,
+                course_name = COALESCE(events.course_name, excluded.course_name)
+                """, (key, student, course, course_name, digest, status, confirmed, now))
         self.respond(200, {"ok": True})
 
     def do_GET(self):
@@ -126,12 +137,12 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, TypeError):
             return self.respond(400, {"error": "invalid request"})
         with closing(connect()) as db, db:
-            rows = db.execute("""SELECT course_code, status, confirmed_at, received_at
+            rows = db.execute("""SELECT course_code, status, confirmed_at, received_at, course_name
                 FROM events WHERE session_key = ? AND received_at >= ?
                 ORDER BY received_at DESC LIMIT ?""",
                 (key, int(time.time() * 1000) - 30 * 86400000, limit)).fetchall()
         self.respond(200, {"events": [{"courseCode": r[0], "status": r[1],
-            "confirmedAt": r[2], "receivedAt": r[3]} for r in rows]})
+            "confirmedAt": r[2], "receivedAt": r[3], "courseName": r[4]} for r in rows]})
 
 
 if __name__ == "__main__":

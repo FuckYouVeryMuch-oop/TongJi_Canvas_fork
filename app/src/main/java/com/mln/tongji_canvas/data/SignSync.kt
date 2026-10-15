@@ -17,10 +17,17 @@ import java.util.concurrent.TimeUnit
 
 data class SyncedSignEvent(
     val courseCode: String,
+    val courseName: String?,
     val status: String,
     val confirmedAt: Long,
     val receivedAt: Long
-)
+) {
+    val courseLabel: String get() {
+        val name = courseName?.trim()?.takeIf { it.isNotBlank() && !it.equals("undefined", true) && !it.equals("null", true) }
+        val code = courseCode.trim().takeIf { it.isNotBlank() && !it.equals("undefined", true) && !it.equals("null", true) }
+        return name ?: code?.let { "课程 $it" } ?: "课程未识别"
+    }
+}
 
 class SignSync(context: Context) {
     private val prefs = context.getSharedPreferences("sign_sync", Context.MODE_PRIVATE)
@@ -30,6 +37,16 @@ class SignSync(context: Context) {
         .readTimeout(5, TimeUnit.SECONDS)
         .build()
     private val base = "https://8.153.174.254/sign-sync/v1"
+
+    init {
+        // Older events did not record who sent them. Do not present those ambiguous
+        // records as a friend's help after upgrading to the incoming-only view.
+        if (prefs.getInt("inbox_version", 0) < 2) {
+            prefs.edit().putInt("inbox_version", 2)
+                .putLong("inbox_since", System.currentTimeMillis())
+                .remove("cached_events").remove("last_synced").remove("pending").apply()
+        }
+    }
 
     fun enabled(): Boolean = prefs.getBoolean("enabled", false)
     fun ownAccountId(): String? = prefs.getString("own_account", null)
@@ -47,7 +64,10 @@ class SignSync(context: Context) {
     fun cachedEvents(): List<SyncedSignEvent> = parseEvents(prefs.getString("cached_events", "[]"))
 
     suspend fun enqueue(account: UserSession, url: String, result: SignResult) = mutex.withLock {
-        if (!enabled() || !result.signed || account.studentId.isNullOrBlank()) return@withLock
+        // My own sign-in needs no notification. A friend's account is uploaded
+        // so that its owner can see the result on their phone.
+        if (!enabled() || ownAccountId() == null || account.id == ownAccountId() ||
+            !result.signed || account.studentId.isNullOrBlank()) return@withLock
         val session = sessionValue(account.accessToken) ?: return@withLock
         val target = url.toHttpUrlOrNull() ?: return@withLock
         if (!SignInClient.validTarget(url)) return@withLock
@@ -57,6 +77,9 @@ class SignSync(context: Context) {
             .put("studentId", account.studentId)
             .put("session", session)
             .put("courseCode", course)
+            .put("courseName", result.courseName?.trim()?.takeIf {
+                it.isNotBlank() && !it.equals("undefined", true) && it.length <= 120
+            })
             .put("rollCallDigest", sha256(token))
             .put("status", result.status.name)
             .put("confirmedAt", System.currentTimeMillis())
@@ -113,8 +136,14 @@ class SignSync(context: Context) {
                     if (!response.isSuccessful) return@withContext false
                     val json = JSONObject(response.body?.string().orEmpty())
                     val events = json.getJSONArray("events")
+                    val incoming = JSONArray()
+                    val since = prefs.getLong("inbox_since", 0L)
+                    for (i in 0 until events.length()) {
+                        val event = events.getJSONObject(i)
+                        if (event.optLong("receivedAt") >= since) incoming.put(event)
+                    }
                     if (!enabled() || ownAccountId() != account.id) return@withContext false
-                    prefs.edit().putString("cached_events", events.toString())
+                    prefs.edit().putString("cached_events", incoming.toString())
                         .putLong("last_synced", System.currentTimeMillis()).apply()
                     true
                 }
@@ -126,7 +155,9 @@ class SignSync(context: Context) {
         val arr = JSONArray(raw ?: "[]")
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
-            SyncedSignEvent(o.getString("courseCode"), o.getString("status"),
+            SyncedSignEvent(o.getString("courseCode"), o.optString("courseName").takeIf {
+                it.isNotBlank() && !it.equals("null", true)
+            }, o.getString("status"),
                 o.getLong("confirmedAt"), o.getLong("receivedAt"))
         }
     } catch (_: Exception) { emptyList() }

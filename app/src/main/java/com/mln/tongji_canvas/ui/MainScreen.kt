@@ -378,7 +378,7 @@ fun MainScreen(
                 repository.getAllSessions().firstOrNull { it.id == ownAccountId }?.let { sync.refresh(it) }
             }
             syncSummary = if (syncEnabled && ownAccountId != null) {
-                sync.cachedEvents().firstOrNull()?.let { "最近同步：课程 ${it.courseCode} 已签到" }
+                sync.cachedEvents().firstOrNull()?.let { "朋友帮签：${it.courseLabel} 已签到" }
                     ?: "暂无同步结果"
             } else ""
         }
